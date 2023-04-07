@@ -2,6 +2,7 @@ package httprateredis
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-chi/httprate"
@@ -67,15 +68,21 @@ func newPool(cfg *Config, dial func() (redis.Conn, error)) *redis.Pool {
 type redisCounter struct {
 	pool         *redis.Pool
 	windowLength time.Duration
+	mu           sync.Mutex
 }
 
 var _ httprate.LimitCounter = &redisCounter{}
 
 func (c *redisCounter) Config(requestLimit int, windowLength time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.windowLength = windowLength
 }
 
 func (c *redisCounter) Increment(key string, currentWindow time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	conn := c.pool.Get()
 	defer conn.Close()
 
@@ -94,6 +101,9 @@ func (c *redisCounter) Increment(key string, currentWindow time.Time) error {
 }
 
 func (c *redisCounter) Get(key string, currentWindow, previousWindow time.Time) (int, int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	conn := c.pool.Get()
 	defer conn.Close()
 
